@@ -1,5 +1,6 @@
 # Object files
 *.o
+*.pyc
 
 # Libraries
 *.lib
@@ -21,3 +22,15 @@
 *.map
 
 .DS_Store
+
+# Dolphin file manager
+.directory
+
+#Kate
+.kate-swp
+
+*~
+
+build/*
+
+localconfig.mk

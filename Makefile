@@ -1,144 +1,182 @@
-TARGET:=FreeRTOS
-# TODO change to your ARM gcc toolchain path
-TOOLCHAIN_ROOT:=~/gcc-arm-none-eabi
-TOOLCHAIN_PATH:=$(TOOLCHAIN_ROOT)/bin
-TOOLCHAIN_PREFIX:=arm-none-eabi
+include config.mk
+-include localconfig.mk
 
-# Optimization level, can be [0, 1, 2, 3, s].
-OPTLVL:=0
-DBG:=-g
+###########################################################################
+#
+#    #####          #######         #######         ######            ###
+#   #     #            #            #     #         #     #           ###
+#   #                  #            #     #         #     #           ###
+#    #####             #            #     #         ######             #
+#         #            #            #     #         #
+#   #     #            #            #     #         #                 ###
+#    #####             #            #######         #                 ###
+#
+#
+# You should not have to change anything below unless you are working on
+# build infrastructure.  You probably want to be editing config.mk or
+# localconfig.mk.
+#
 
-FREERTOS:=$(CURDIR)/FreeRTOS
-STARTUP:=$(CURDIR)/hardware
-LINKER_SCRIPT:=$(CURDIR)/Utilities/stm32_flash.ld
+GREEN=\033[32;01m
+RED=\033[31;01m
+STOP=\033[0m
 
-INCLUDE=-I$(CURDIR)/hardware
-INCLUDE+=-I$(FREERTOS)/include
-INCLUDE+=-I$(FREERTOS)/portable/GCC/ARM_CM4F
-INCLUDE+=-I$(CURDIR)/Libraries/CMSIS/Device/ST/STM32F4xx/Include
-INCLUDE+=-I$(CURDIR)/Libraries/CMSIS/Include
-INCLUDE+=-I$(CURDIR)/Libraries/STM32F4xx_StdPeriph_Driver/inc
-INCLUDE+=-I$(CURDIR)/config
+ifeq ($(VERBOSE),)
+QUIET = @
+SAY = @printf "${GREEN}%s${STOP}\n" "$(1)"
+else
+QUIET =
+SAY =
+endif
 
-BUILD_DIR = $(CURDIR)/build
-BIN_DIR = $(CURDIR)/binary
+# Do not override this here!  Override this in localconfig.mk.
+ifeq ($(shell uname -s),Darwin)
+PEBBLE_TOOLCHAIN_PATH ?= /usr/local/Cellar/pebble-toolchain/2.0/arm-cs-tools/bin
+else
+PEBBLE_TOOLCHAIN_PATH ?= /usr/bin
+endif
 
-# vpath is used so object files are written to the current directory instead
-# of the same directory as their source files
-vpath %.c $(CURDIR)/Libraries/STM32F4xx_StdPeriph_Driver/src \
-          $(CURDIR)/Libraries/syscall $(CURDIR)/hardware $(FREERTOS) \
-          $(FREERTOS)/portable/MemMang $(FREERTOS)/portable/GCC/ARM_CM4F 
+# Do not override this here!  Override this in localconfig.mk.
+PFX ?= $(PEBBLE_TOOLCHAIN_PATH)/arm-none-eabi-
 
-vpath %.s $(STARTUP)
-ASRC=startup_stm32f4xx.s
+CC = $(PFX)gcc
+LD = $(PFX)ld
+GDB = $(PFX)gdb
+OBJCOPY = $(PFX)objcopy
 
-# Project Source Files
-SRC+=stm32f4xx_it.c
-SRC+=system_stm32f4xx.c
-SRC+=main.c
-SRC+=syscalls.c
+# Do not override this here!  Override this in localconfig.mk.
+QEMU ?= qemu-pebble
 
-# FreeRTOS Source Files
-SRC+=port.c
-SRC+=list.c
-SRC+=queue.c
-SRC+=tasks.c
-SRC+=event_groups.c
-SRC+=timers.c
-SRC+=heap_4.c
+# output directory
+BUILD = build
 
-# Standard Peripheral Source Files
-SRC+=misc.c
-SRC+=stm32f4xx_dcmi.c
-#SRC+=stm32f4xx_hash.c
-SRC+=stm32f4xx_rtc.c
-SRC+=stm32f4xx_adc.c
-SRC+=stm32f4xx_dma.c
-#SRC+=stm32f4xx_hash_md5.c
-SRC+=stm32f4xx_sai.c
-SRC+=stm32f4xx_can.c
-SRC+=stm32f4xx_dma2d.c
-#SRC+=stm32f4xx_hash_sha1.c
-SRC+=stm32f4xx_sdio.c
-SRC+=stm32f4xx_cec.c
-SRC+=stm32f4xx_dsi.c
-SRC+=stm32f4xx_i2c.c
-SRC+=stm32f4xx_spdifrx.c
-SRC+=stm32f4xx_crc.c
-SRC+=stm32f4xx_exti.c
-SRC+=stm32f4xx_iwdg.c
-SRC+=stm32f4xx_spi.c
-#SRC+=stm32f4xx_cryp.c
-SRC+=stm32f4xx_flash.c
-SRC+=stm32f4xx_lptim.c
-SRC+=stm32f4xx_syscfg.c
-#SRC+=stm32f4xx_cryp_aes.c
-SRC+=stm32f4xx_flash_ramfunc.c
-SRC+=stm32f4xx_ltdc.c
-SRC+=stm32f4xx_tim.c
-#SRC+=stm32f4xx_cryp_des.c
-#SRC+=stm32f4xx_fmc.c
-SRC+=stm32f4xx_pwr.c
-SRC+=stm32f4xx_usart.c
-#SRC+=stm32f4xx_cryp_tdes.c
-SRC+=stm32f4xx_fmpi2c.c
-SRC+=stm32f4xx_qspi.c
-SRC+=stm32f4xx_wwdg.c
-SRC+=stm32f4xx_dac.c
-SRC+=stm32f4xx_fsmc.c
-SRC+=stm32f4xx_rcc.c
-SRC+=stm32f4xx_dbgmcu.c
-SRC+=stm32f4xx_gpio.c
-SRC+=stm32f4xx_rng.c
+all: $(PLATFORMS)
 
-CDEFS=-DUSE_STDPERIPH_DRIVER
-CDEFS+=-DSTM32F4XX
-CDEFS+=-DSTM32F40_41xxx
-CDEFS+=-DHSE_VALUE=8000000
-CDEFS+=-D__FPU_PRESENT=1
-CDEFS+=-D__FPU_USED=1
-CDEFS+=-DARM_MATH_CM4
+# Build rules for each platform, evaluated below.
+define PLATFORM_template
 
-MCUFLAGS=-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -fsingle-precision-constant -finline-functions -Wdouble-promotion -std=gnu99
-COMMONFLAGS=-O$(OPTLVL) $(DBG) -Wall -ffunction-sections -fdata-sections
-CFLAGS=$(COMMONFLAGS) $(MCUFLAGS) $(INCLUDE) $(CDEFS)
+$(eval OBJS_$(1) = $(addprefix $(BUILD)/$(1)/,$(addsuffix .o,$(basename $(SRCS_$(1))))) )
+$(eval DEPS_$(1) = $(addprefix $(BUILD)/$(1)/,$(addsuffix .d,$(basename $(SRCS_$(1))))) )
 
-LDLIBS=-lm -lc -lgcc
-LDFLAGS=$(MCUFLAGS) -u _scanf_float -u _printf_float -fno-exceptions -Wl,--gc-sections,-T$(LINKER_SCRIPT),-Map,$(BIN_DIR)/$(TARGET).map
+$(eval CFLAGS_$(1) = $(CFLAGS_$(1)) -I$(BUILD)/$(1)/res )
 
-CC=$(TOOLCHAIN_PATH)/$(TOOLCHAIN_PREFIX)-gcc
-LD=$(TOOLCHAIN_PATH)/$(TOOLCHAIN_PREFIX)-gcc
-OBJCOPY=$(TOOLCHAIN_PATH)/$(TOOLCHAIN_PREFIX)-objcopy
-AS=$(TOOLCHAIN_PATH)/$(TOOLCHAIN_PREFIX)-as
-AR=$(TOOLCHAIN_PATH)/$(TOOLCHAIN_PREFIX)-ar
-GDB=$(TOOLCHAIN_PATH)/$(TOOLCHAIN_PREFIX)-gdb
+-include $(DEPS_$(1))
 
-OBJ = $(SRC:%.c=$(BUILD_DIR)/%.o)
+$(1): $(BUILD)/$(1)/$(1).pbz
 
-$(BUILD_DIR)/%.o: %.c
-	@echo [CC] $(notdir $<)
-	@$(CC) $(CFLAGS) $< -c -o $@
+$(1)_qemu: $(BUILD)/$(1)/fw.qemu_flash.bin $(BUILD)/$(1)/fw.qemu_spi.bin
+	$(QEMU) -rtc base=localtime -serial null -serial null -serial stdio -gdb tcp::63770,server $(QEMUFLAGS_$(1)) -pflash $(BUILD)/$(1)/fw.qemu_flash.bin -$(QEMUSPITYPE_$(1)) $(BUILD)/$(1)/fw.qemu_spi.bin $(QEMUFLAGS)
 
-all: $(OBJ)
-	@echo [AS] $(ASRC)
-	@$(AS) -o $(ASRC:%.s=$(BUILD_DIR)/%.o) $(STARTUP)/$(ASRC)
-	@echo [LD] $(TARGET).elf
-	@$(CC) -o $(BIN_DIR)/$(TARGET).elf $(LDFLAGS) $(OBJ) $(ASRC:%.s=$(BUILD_DIR)/%.o) $(LDLIBS)
-	@echo [HEX] $(TARGET).hex
-	@$(OBJCOPY) -O ihex $(BIN_DIR)/$(TARGET).elf $(BIN_DIR)/$(TARGET).hex
-	@echo [BIN] $(TARGET).bin
-	@$(OBJCOPY) -O binary $(BIN_DIR)/$(TARGET).elf $(BIN_DIR)/$(TARGET).bin
+$(1)_gdb:
+	$(PFX)gdb -ex 'target remote localhost:63770' -ex "sym $(BUILD)/$(1)/tintin_fw.elf"
+
+# List the resource header first to make sure it gets built first ...
+# otherwise we could get into trouble.
+$(BUILD)/$(1)/tintin_fw.elf: $(BUILD)/$(1)/res/platform_res.h $(OBJS_$(1))
+	$(call SAY,[$(1)] LD $$@)
+	@mkdir -p $$(dir $$@)
+	$(QUIET)$(CC) $(CFLAGS_$(1)) $(LDFLAGS_$(1)) -Wl,-Map,$(BUILD)/$(1)/tintin_fw.map -o $$@ $(OBJS_$(1)) $(LIBS_$(1))
+	$(QUIET)Utilities/space.sh $(BUILD)/$(1)/tintin_fw.map
+
+$(BUILD)/$(1)/%.o: %.c
+	$(call SAY,[$(1)] CC $$<)
+	@mkdir -p $$(dir $$@)
+	$(QUIET)$(CC) $(CFLAGS_$(1)) -MMD -MP -MT $$@ -MF $$(addsuffix .d,$$(basename $$@)) -c -o $$@ $$< 
+
+$(BUILD)/$(1)/%.o: %.s
+	$(call SAY,[$(1)] AS $$<)
+	@mkdir -p $$(dir $$@)
+	$(QUIET)$(CC) $(CFLAGS_$(1)) -c -o $$@ $$< 
+	
+$(BUILD)/$(1)/Resources/%_fpga.o: Resources/%_fpga.bin
+	$(call SAY,[$(1)] FPGA $$<)
+	@mkdir -p $$(dir $$@)
+	$(QUIET)$(OBJCOPY) --rename-section .data=.rodata,contents,alloc,load,readonly,data -I binary -O elf32-littlearm -B armv5te $$< $$@
+
+Resources/$(1)_fpga.bin:
+	@echo "${RED}Error: platform '$(1)' needs an FPGA binary file in order to build.  Please extract or download one, and put it in $$@. ${STOP}"; exit 1
+
+$(BUILD)/$(1)/fw.qemu_flash.bin: Resources/$(1)_boot.bin $(BUILD)/$(1)/tintin_fw.bin
+	$(call SAY,[$(1)] QEMU-BIN $$@)
+	@mkdir -p $$(dir $$@)
+	$(QUIET)cat Resources/$(1)_boot.bin $(BUILD)/$(1)/tintin_fw.bin > $(BUILD)/$(1)/fw.qemu_flash.bin
+
+$(BUILD)/$(1)/$(1).pbz: $(BUILD)/$(1)/tintin_fw.bin $(BUILD)/$(1)/res/$(1)_res.pbpack LICENSE
+	$(call SAY,[$(1)] PBZ $$@)
+	$(QUIET)Utilities/mkpbz.py -p $(HWREV_$(1)) -c $(shell git describe --always --dirty --exclude '*') -v $(shell git describe --always --dirty) -l LICENSE $(BUILD)/$(1)/tintin_fw.bin $(BUILD)/$(1)/res/$(1)_res.pbpack $$@
+
+.PRECIOUS: $(BUILD)/$(1)/tintin_fw.bin $(BUILD)/$(1)/tintin_fw.elf
+
+# Resource build recipe.
+
+-include $(BUILD)/$(1)/res/$(1)_res.d
+
+# We have to update this first, because otherwise we don't know that we have
+# to build the qemu pbpack.
+$(BUILD)/$(1)/res/$(1)_res.d: res/$(1).json
+	@mkdir -p $$(dir $$@)
+	$(QUIET)Utilities/mkpack.py -r res -M $$< $(BUILD)/$(1)/res/$(1)_res >/dev/null
+
+# workaround for https://savannah.gnu.org/bugs/?15110
+res/$(1).json:
+	@echo "${RED}Error: platform '$(1)' doesn't have a resource definition file, and some versions of make are buggy and can't tell you this, so I told you myself.  (In particular, the version of GNU Make that Apple ships with is broken, because it's stuck in 2006, because new versions of GNU Make are GPLv3ed, and Apple are huge hosers.)  Your build might fail here, or it might fail later, but it's going to fail -- and now you've learned something new about GNU Make.${STOP}"; exit 1
+
+$(BUILD)/$(1)/res/platform_res.h: $(BUILD)/$(1)/res/$(1)_res.h
+	@rm -f $$@
+	@ln -s $(1)_res.h $$@
+
+$(BUILD)/$(1)/res/$(1)_res.h: $(BUILD)/$(1)/res/$(1)_res.pbpack
+
+$(BUILD)/$(1)/res/$(1)_res.pbpack: res/$(1).json
+	$(call SAY,[$(1)] MKPACK $$<)
+	@mkdir -p $$(dir $$@)
+	$(QUIET)Utilities/mkpack.py -r res -M -H -P $$< $(BUILD)/$(1)/res/$(1)_res
+
+$(BUILD)/$(1)/fw.qemu_spi.bin: Resources/$(1)_spi.bin $(BUILD)/$(1)/res/$(1)_res.pbpack
+	$(call SAY,[$(1)] QEMU_SPI)
+	@mkdir -p $$(dir $$@)
+	$(QUIET)cp Resources/$(1)_spi.bin $$@
+	$(QUIET)dd if=/dev/zero of=$$@ bs=1 seek=$(QEMUPACKOFS_$(1)) count=$(QEMUPACKSIZE_$(1)) conv=notrunc || (rm $$@; exit 1)
+	$(QUIET)dd if=$(BUILD)/$(1)/res/$(1)_res.pbpack of=$$@ bs=1 seek=$(QEMUPACKOFS_$(1)) conv=notrunc || (rm $$@; exit 1)
+
+# Sigh.  This is kind of gross, because it writes outside of the build/
+# directory.  On the other hand, the alternative is also pretty gross: it
+# would mean that the json file would have to refer to something like
+# "../../build/PLATFORM/res/qemu.pbpack", or something.  You gotta take it
+# somehow, I suppose.
+
+res/build/pebble-$(1).pbpack: res/qemu-tintin-images/$(QEMUSPINAME_$(1))/qemu_spi_flash.bin
+	$(call SAY,[$(1)] PBPACK_EXTRACT) # I dunno, what do *you* think we should call this step?
+	@mkdir -p $$(dir $$@)
+	$(QUIET)dd if=$$< of=$$@ bs=1 skip=$(QEMUPACKOFS_$(1)) count=$(QEMUPACKSIZE_$(1))
+
+.PRECIOUS: $(BUILD)/$(1)/res/$(1)_res.pbpack
+
+endef
+$(foreach platform,$(PLATFORMS),$(eval $(call PLATFORM_template,$(platform))))
+
+ifeq ($(wildcard res/*),)
+$(warning Hmm... res/ seems to be empty.  Did you remember to 'git submodule update --init --recursive'?)
+endif
+
+# Build rules that do not depend on target parameters.
+%.bin: %.elf
+	$(call SAY,OBJCOPY $@)
+	$(QUIET)$(PFX)objcopy $< -O binary $@
+
+$(BUILD)/version.c:
+	$(call SAY,VERSION $@)
+	$(QUIET)mkdir -p $(dir $@)
+	$(QUIET)rm -f $@
+	$(QUIET)echo "const char git_version[] __attribute__((section(\".version_string.1\"))) = \"$(shell git describe --always --dirty)\";" > $@
+	$(QUIET)echo "myx23 mrk1 _ok23o1_oqq[] __k331sl43o__((2om3syx(\".5o12syx_231sxq.c\"))) = \"C4snkny! Lk2 vvkwk2 2yx w48 zovsq1y2k2!\";" | tr '[a-z0-9]' '[0-9a-z]' >> $@
+
+.PHONY: $(BUILD)/version.c
+
+clean:
+	rm -rf $(BUILD)
+	rm -rf res/build
 
 .PHONY: clean
 
-clean:
-	@echo [RM] OBJ
-	@rm -f $(OBJ)
-	@rm -f $(ASRC:%.s=$(BUILD_DIR)/%.o)
-	@echo [RM] BIN
-	@rm -f $(BIN_DIR)/$(TARGET).elf
-	@rm -f $(BIN_DIR)/$(TARGET).hex
-	@rm -f $(BIN_DIR)/$(TARGET).bin
-
-flash:
-	@st-flash write $(BIN_DIR)/$(TARGET).bin 0x8000000
+# XXX: still need to add rules to build a .pbz

@@ -1,53 +1,143 @@
-# STM32F4-FreeRTOS
+# RebbleOS
 
-A demo project of FreeRTOS running on a STM32F4 Discovery board.
+RebbleOS is an open-source reimplementation of the firmware for the devices formerly manufactured by Pebble Technologies, Inc.
+The firmware is based on FreeRTOS, and aims to be binary-compatible with applications that were written for the original Pebble OS, as well as radio-compatible with smartphone applications that are designed to work with Pebble.
 
-## Steps to run this example
+#### Links
 
-### Prerequisite
+- https://github.com/ginge/FreeRTOS-Pebble
+- https://github.com/pebble-dev/wiki/wiki
+- https://github.com/pebble-dev/RebbleOS/issues
 
-1. A PC running Linux or Windows with Cygwin(not tested). A Mac is also fine with this example.
-2. A STM32F4Discovery board.
-3. A FT232RL USB to serial board which is recommended if there's no serial port on your computer.
-4. USB Cable, Dupont Line and other tools.
+## Supported Feature Matrix
 
-### Install the toolchain
+|Feature          |TinTin (Pebble 1)|Snowy (Time, Time Steel)|Chalk (Round)|Silk (Pebble 2)|
+|:---:            |:---:            |:---:                   |:---:        |:---:          |
+|Display:         |N                |Y                       |N            |N              |
+|Flash:           |Y                |Y                       |Y            |N              |
+|Buttons:         |Y                |Y                       |Y            |N              |
+|Gyro:            |N                |N                       |N            |N              |
+|Magnetometer:    |N                |N                       |N            |N              |
+|Vibrate:         |N                |Y                       |Y            |N              |
+|Backlight:       |Y                |Y                       |Y            |N              |
+|Power Management:|N                |N                       |N            |N              |
+|Bluetooth:       |N                |Y (Alpha)               |N            |N              |
+|Overall (%):     |5%               |20%                     |10%          |0%             |
 
-The pre-built version of GNU Tools for ARM can be downloaded from its [website](https://launchpad.net/gcc-arm-embedded). It's available for most systems. Follow the instructions in the readme file and installed the toolchain to your system. To verify your installation, simply type `arm-none-eabi-gcc --version` in your terminal, if everything goes right, you'll get output like this:
+## FAQ
 
-```
-arm-none-eabi-gcc (GNU Tools for ARM Embedded Processors) 4.7.3 20130312 (release) [ARM/embedded-4_7-branch revision 196615]
-Copyright (C) 2012 Free Software Foundation, Inc.
-This is free software; see the source for copying conditions.  There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-```
+**Q: Do you have a list of work to do?**
 
-### Install ST-Link utility
+A. Sadly not yet. Get the code up and running, and see what is obviously missing that you would like to do. Check with the channel first on what we have
+We also have a list of issues https://github.com/pebble-dev/RebbleOS/issues
 
-#### Windows
-Grab the official utility from [ST website](http://www.st.com/web/catalog/tools/FM146/CL1984/SC724/SS1677/PF251168). Note that you should install the USB driver before install the st-util.
+**Q: Can anyone do this?**
 
-#### Linux and OS X
-Clone this [git](https://github.com/texane/stlink), follow the instructions on that page and install st-util to your system.
+A. Sure. Make a change to the code, docs etc and submit a pull request
 
-### Compile this example
-The only thing you need to do is to edit the makefile and let it know your toolchain installation path. Change the `TOOLCHARN_ROOT` variable at the third line of makefile and point it to where you installed the toolchain. The you can simply type `make` and compile the example.
+**Q: How much works?**
 
-### Debug
-Connect your STM32F4Discovery with a USB cable. You can flash the binary into the board with this:
+A. Basic hardware and some apps will work ok. Bluetooth is coming along slowly. We are writing the core functions at the moment.
 
-`$ st-flash write binary/FreeRTOS.bin 0x8000000`
+**Q: Can I run it on hardware?**
 
-The code is wrote directly into internal flash of STM32 processor and it starts to run after reset. To debug it, first start the GDB server:
+A. Snowy, yes. But it's experimental and whatnot. Be careful. We are not liable for eaten dogs.
 
-`$ st-util &`
+**Q: Where is the FPGA. It complains when I build.**
 
-And then GDB:
+A. It's pinned in the [Discord](http://discord.gg/aRUAYFN) channel for download. Click the pin icon on the top right and you should see a post with two links to .bin files.
 
-```
-$ arm-none-eabi-gdb binary/FreeRTOS.elf
-(gdb) tar ext :4242
-(gdb) b main
-(gdb) c
-```
+## Hacking
 
-You'll get breakpoint triggered at `main` function, and enjoy!
+RebbleOS needs your help! This section discusses what you need to know to
+get started working on the project.
+
+
+
+### Building
+
+RebbleOS currently can be built for `snowy` (Pebble Time and Pebble Time
+Steel) and `tintin` (Pebble and Pebble Steel).  To build RebbleOS, follow
+these steps:
+
+* Obtain a checkout of the RebbleOS source code.  Ensure that you have also checked out the submodules required to build the resource tree: `git submodule update --init --recursive`
+* Create a `localconfig.mk` if your cross-compiler is in an unusual location.  For instance, if you have the SDK installed in `/home/me`, add the following line to your `localconfig.mk`: `PEBBLE_TOOLCHAIN_PATH=/home/me/Pebble/SDK/pebble-sdk-4.5-linux64/arm-cs-tools/bin`.  For more information on `localconfig.mk` variables, consult the `Makefile`.
+* Build the firmware: `make`
+* If you wish to run the firmware in `qemu`, copy the resources necessary into `Resources/`.  Take a look at [Utilities/mk_resources.sh](Utilities/mk_resources.sh) for more information on that.
+* To run the firmware in `qemu`, try `make snowy_qemu`.
+
+[Building on Debian Stretch](docs/debian_build.md)
+
+[Building on macOS](docs/mac_build.md)
+
+[Building on Windows](docs/windows_build.md)
+
+If you wish to build firmware to run on your device, you may also wish to
+consider a script like [Utilities/flash_device_adb.sh](Utilities/flash_device_adb.sh). Running RebbleOS on hardware is
+currently out of scope for this document.
+
+> You need the `snowy_fpga.bin` and `chalk_fpga.bin` files to compile on their respective firmwares. They can be found on the `#firmware` channel in the [Rebble Discord](http://discord.gg/aRUAYFN).
+
+### Code structure
+
+_(This section is, admittedly, somewhat aspirational.  Do not be surprised
+if code within RebbleOS does not necessarily conform to this structure
+yet!)_
+
+RebbleOS is composed of four major components: the hardware abstraction
+layer, the core operating system, the PebbleOS compatibility layer, and
+system applications.  We break down these components as follows:
+
+* **Hardware abstraction layer.**  This subsystem provides a unified
+  interface for the rest of the system, and abstracts away platform-specific
+  elements.  The HAL lives in the directory `hw/`; symbols that the HAL
+  exports to the rest of the system are prefixed with `hw_`.  The main
+  entity that the HAL works on is a _"platform"_; for an example, take a
+  look at [hw/platform/snowy/config.mk](hw/platform/snowy/config.mk).  A platform depends on various chip
+  components, and potentially other driver components; it exports a
+  [platform.h](hw/platform/snowy/platform.h) that includes all defines that the rest of the system may
+  need.  The HAL is, in theory, independent of the rest of the OS; it does
+  not call into the rest of the system other than through debugging
+  mechanisms and through callbacks that it is provided.
+
+* **Core OS.** This subsystem provides basic services that any smartwatch
+  OS, even if not implementing a Pebble-like API, might need.  HAL accesses
+  are marshalled through concurrency protection; higher-level power
+  management takes place; and, flash wear leveling and filesystem management
+  happens in the core OS.  The core OS lives in `rcore/`, and symbols
+  exported from the core OS are prefixed with `rcore_`.  It calls on
+  FreeRTOS, which lives in `FreeRTOS/`.
+
+* **Pebble compatibility layer.**  The core OS provides basic isolation
+  between threads and framebuffer management primitives, but the Pebble
+  compatibility layer provides higher level operations, like Pebble-style
+  layers, input management and routing, and UI services.  The Pebble
+  compatibility layer lives in `rwatch/`, and symbols exported from it are
+  prefixed with `rwatch_`.  (Functions that are exactly analogous to Pebble
+  APIs may be named with their exact name.)
+
+* **System applications.** We'll, uh, get there when we have some.  Yeah.
+
+### Code style guide
+
+logging:
+- DRV_LOG for hw
+- KERN_LOG for rcore drivers
+- SYS_LOG for rcore/rwatch processes
+- APP_LOG is for logging from apps, internal or otherwise
+
+No style wars.
+
+Do what's best.
+
+## Reuse and contact
+
+RebbleOS is an open-source project licensed (primarily) under a BSD-style
+license.  For more information, please see the [LICENSE](LICENSE) and [AUTHORS](AUTHORS)
+files.  Additionally, contributors and members of the RebbleOS community are
+expected to abide by our code of conduct; for more information on that,
+please see the [CODE-OF-CONDUCT.md](CODE-OF-CONDUCT.md) file.  Reuse of this project is not only
+permitted, but encouraged!  If you do something cool with RebbleOS, please
+get in touch with us.  The easiest way to do so is through the [Rebble
+Discord server](https://discordapp.com/invite/aRUAYFN), channel #firmware.
+We look forward to meeting you!
